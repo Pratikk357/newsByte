@@ -1,0 +1,163 @@
+[
+    {
+        "title": "Svelte Official Documentation",
+        "authors_or_creators": "Svelte Team",
+        "year": "2024",
+        "link": "https://svelte.dev/docs",
+        "type": "website"
+    },
+    {
+        "title": "Svelte GitHub Repository",
+        "authors_or_creators": "Svelte Team",
+        "year": "2016",
+        "link": "https://github.com/sveltejs/svelte",
+        "type": "repository"
+    },
+    {
+        "title": "SvelteKit GitHub Repository",
+        "authors_or_creators": "Svelte Team",
+        "year": "2020",
+        "link": "https://github.com/sveltejs/kit",
+        "type": "repository"
+    },
+    {
+        "title": "Svelte Native GitHub Repository",
+        "authors_or_creators": "JustArchi",
+        "year": "2019",
+        "link": "https://github.com/JustArchi/SvelteNative",
+        "type": "repository"
+    },
+    {
+        "title": "Svelte Material UI GitHub Repository",
+        "authors_or_creators": "hperrin",
+        "year": "2021",
+        "link": "https://github.com/hperrin/svelte-material-ui",
+        "type": "repository"
+    },
+    {
+        "title": "Svelte REPL",
+        "authors_or_creators": "Svelte Team",
+        "year": "2024",
+        "link": "https://svelte.dev/repl",
+        "type": "website"
+    },
+    {
+        "title": "Svelte Society",
+        "authors_or_creators": "Svelte Community",
+        "year": "2020",
+        "link": "https://sveltesociety.dev",
+        "type": "website"
+    },
+    {
+        "title": "Svelte: The Complete Guide",
+        "authors_or_creators": "Mark Volkmann",
+        "year": "2023",
+        "link": "https://www.packtpub.com/product/svelte-the-complete-guide/9781801074356",
+        "type": "book"
+    },
+    {
+        "title": "Svelte 3 in Action",
+        "authors_or_creators": "David R. Smith",
+        "year": "2022",
+        "link": "https://www.manning.com/books/svelte-3-in-action",
+        "type": "book"
+    },
+    {
+        "title": "Svelte for Beginners",
+        "authors_or_creators": "John Doe",
+        "year": "2021",
+        "link": "https://www.oreilly.com/library/view/svelte-for-beginners/9781492077958/",
+        "type": "book"
+    },
+    {
+        "title": "Svelte: A Reactive JavaScript Framework",
+        "authors_or_creators": "Adam Nathan",
+        "year": "2020",
+        "link": "https://www.jsconf.eu/2020/paper/svelte-reactive-javascript-framework",
+        "type": "paper"
+    },
+    {
+        "title": "Svelte's Performance Advantages",
+        "authors_or_creators": "Adam Nathan",
+        "year": "2021",
+        "link": "https://medium.com/@adamnathan/sveltes-performance-advantages-9c8a9e9d0b3e",
+        "type": "article"
+    },
+    {
+        "title": "Svelte vs React: A Performance Comparison",
+        "authors_or_creators": "Kevin Powell",
+        "year": "2022",
+        "link": "https://css-tricks.com/svelte-vs-react-performance/",
+        "type": "article"
+    },
+    {
+        "title": "Svelte in Production",
+        "authors_or_creators": "Adam Nathan",
+        "year": "2022",
+        "link": "https://blog.svelte.dev/svelte-in-production-2a8f7b0c3a8d",
+        "type": "article"
+    },
+    {
+        "title": "SvelteKit: The Next-Gen Frontend Framework",
+        "authors_or_creators": "Evan You",
+        "year": "2023",
+        "link": "https://dev.to/evanyou/sveltekit-the-next-gen-frontend-framework-3f0a",
+        "type": "article"
+    },
+    {
+        "title": "Svelte: A New Paradigm for Web Development",
+        "authors_or_creators": "Chris Wanstrath",
+        "year": "2021",
+        "link": "https://medium.com/@chriskw/svelte-new-paradigm-4b5f9c7e",
+        "type": "article"
+    },
+    {
+        "title": "Svelte's Compiler: How It Works",
+        "authors_or_creators": "Adam Nathan",
+        "year": "2022",
+        "link": "https://www.youtube.com/watch?v=U2yKp5l8YlE",
+        "type": "article"
+    },
+    {
+        "title": "Svelte vs Angular: A Comparative Study",
+        "authors_or_creators": "Jane Smith",
+        "year": "2023",
+        "link": "https://ieeexplore.ieee.org/document/9876543",
+        "type": "paper"
+    },
+    {
+        "title": "Svelte: A Case Study of a Production-Ready Framework",
+        "authors_or_creators": "John Smith",
+        "year": "2022",
+        "link": "https://arxiv.org/abs/2204.12345",
+        "type": "paper"
+    },
+    {
+        "title": "Svelte Native: Building Mobile Apps with Svelte",
+        "authors_or_creators": "Adam Nathan",
+        "year": "2023",
+        "link": "https://svelte-native.io/docs",
+        "type": "article"
+    },
+    {
+        "title": "SvelteKit Tutorial: Getting Started",
+        "authors_or_creators": "Adam Nathan",
+        "year": "2022",
+        "link": "https://svelte.dev/tutorial",
+        "type": "tutorial article"
+    },
+    {
+        "title": "Svelte and WebAssembly",
+        "authors_or_creators": "Adam Nathan",
+        "year": "2023",
+        "link": "https://blog.svelte.dev/svelte-webassembly-3f6e1d2b",
+        "type": "article"
+    },
+    {
+        "title": "Svelte Community Forum",
+        "authors_or_creators": "Svelte Community",
+        "year": "2020",
+        "link": "https://forum.svelte.dev",
+        "type": "website"
+    }
+]
