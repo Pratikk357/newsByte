@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"      # AMQP port
+      - "15672:15672"    # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: news_db
+      POSTGRES_USER: newsuser
+      POSTGRES_PASSWORD: newspassword
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  nestapp:
+    container_name: nestapp
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - rabbitmq
+      - postgres
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://newsuser:newspassword@postgres:5432/news_db
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+
+volumes:
+  pgdata:
