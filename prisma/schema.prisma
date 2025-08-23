@@ -1,0 +1,147 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+  SUPERADMIN
+}
+
+enum InteractionType {
+  LIKE
+  SHARE
+  COMMENT
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  username      String    @unique
+  password      String
+  firstName     String
+  lastName      String?
+  phoneNumber   String?   @unique
+  role          Role      @default(USER)
+  isActive      Boolean   @default(true)
+  emailVerified Boolean   @default(false)
+  lastLoginAt   DateTime?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  loginHistory        LoginHistory[]
+  addedNewsArticles   NewsArticle[]     @relation("ArticleAddedByUser")
+  deletedNewsArticles NewsArticle[]     @relation("ArticleDeletedByUser")
+  deletedSources      Source[]          @relation("SourceDeletedByUser")
+  deletedCategories   Category[]        @relation("CategoryDeletedByUser")
+  deletedSummaries    Summary[]         @relation("SummaryDeletedByUser")
+  userPreferences     UserPreference[]
+  userInteractions    UserInteraction[]
+}
+
+model LoginHistory {
+  id        String       @id @default(uuid())
+  userId    String
+  loginAt   DateTime  @default(now())
+  logoutAt  DateTime?
+  ipAddress String?
+  userAgent String?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, loginAt])
+}
+
+model NewsArticle {
+  id              String    @id @default(uuid())
+  title           String
+  content         String
+  publishedDate   DateTime
+  sourceId        String
+  addedBy         String? // Refers to User.id
+  isManuallyAdded Boolean   @default(false)
+  url             String    @unique
+  imageUrl        String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+  deletedBy       String?
+
+  source            Source            @relation(fields: [sourceId], references: [id])
+  deletedByUser     User?             @relation("ArticleDeletedByUser", fields: [deletedBy], references: [id])
+  addedByUser       User?             @relation("ArticleAddedByUser", fields: [addedBy], references: [id])
+  summaries         Summary[]
+  articleCategories ArticleCategory[]
+  userInteractions  UserInteraction[]
+}
+
+model Summary {
+  id            String    @id @default(uuid())
+  articleId     String
+  summaryText   String
+  createdAt     DateTime  @default(now())
+  deletedAt     DateTime?
+  deletedBy     String?
+  deletedByUser User?     @relation("SummaryDeletedByUser", fields: [deletedBy], references: [id])
+
+  article NewsArticle @relation(fields: [articleId], references: [id])
+}
+
+model Source {
+  id            String        @id @default(uuid())
+  name          String        @unique
+  website       String        @unique
+  deletedAt     DateTime?
+  deletedBy     String? 
+  deletedByUser User?         @relation("SourceDeletedByUser", fields: [deletedBy], references: [id])
+  articles      NewsArticle[]
+}
+
+model Category {
+  id                String            @id @default(uuid())
+  name              String            @unique
+  deletedAt         DateTime?
+  deletedBy         String? 
+  deletedByUser     User?             @relation("CategoryDeletedByUser", fields: [deletedBy], references: [id])
+  articleCategories ArticleCategory[]
+  userPreferences   UserPreference[]
+}
+
+model ArticleCategory {
+  articleId  String
+  categoryId String
+
+  article  NewsArticle @relation(fields: [articleId], references: [id])
+  category Category    @relation(fields: [categoryId], references: [id])
+
+  @@id([articleId, categoryId])
+}
+
+model UserPreference {
+  userId     String
+  categoryId String
+
+  user     User     @relation(fields: [userId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id])
+
+  @@id([userId, categoryId])
+}
+
+model UserInteraction {
+  userId          String
+  articleId       String
+  interactionType InteractionType
+  interactionText String?
+  interactionDate DateTime        @default(now())
+
+  @@id([userId, articleId, interactionType])
+
+  user    User        @relation(fields: [userId], references: [id])
+  article NewsArticle @relation(fields: [articleId], references: [id])
+}
