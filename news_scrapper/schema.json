@@ -1,0 +1,164 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LearningCompressionStep1Output",
+  "type": "object",
+  "properties": {
+    "rapid_fire_overview": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Plain language summary, max 3 sentences."
+        },
+        "key_concepts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "List of key concepts/terms."
+        },
+        "connection_to_goal": {
+          "type": "string",
+          "description": "How topic connects to the user’s goal."
+        }
+      },
+      "required": ["summary", "key_concepts", "connection_to_goal"]
+    },
+    "high_value_relevance_check": {
+      "type": "object",
+      "properties": {
+        "why_it_matters_now": {
+          "type": "string",
+          "description": "Why the topic matters now practically and in the market."
+        },
+        "how_it_helps_goal": {
+          "type": "string",
+          "description": "How it helps the user achieve their goal faster."
+        }
+      },
+      "required": ["why_it_matters_now", "how_it_helps_goal"]
+    },
+    "ninety_ten_roadmap": {
+      "type": "object",
+      "properties": {
+        "core_knowledge_chunk": {
+          "type": "object",
+          "properties": {
+            "keywords": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "name": {"type": "string"},
+                  "description": {"type": "string"},
+                  "uses": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                  },
+                  "relevance": {"type": "string"},
+                  "examples": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                  }
+                },
+                "required": ["description", "uses", "relevance"]
+              }
+            },
+            "concepts": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "name": {"type": "string"},
+                "properties": {
+                  "description": {"type": "string"},
+                  "when_relevant": {"type": "string"},
+                  "applications": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                  },
+                  "related_concepts": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                  },
+                  "examples": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                  }
+                },
+                "required": ["description", "when_relevant"]
+              }
+            }
+          },
+          "required": ["keywords", "concepts"]
+        },
+        "sequential_learning_plan": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "step": {"type": "string"},
+              "goal": {"type": "string"},
+              "resources": {
+                "type": "array",
+                "items": {"type": "string"}
+              },
+              "expected_outcome": {"type": "string"},
+              "prerequisites": {
+                "type": "array",
+                "items": {"type": "string"}
+              }
+            },
+            "required": ["step", "goal", "expected_outcome"]
+          },
+          "minItems": 1
+        }
+      },
+      "required": ["core_knowledge_chunk", "sequential_learning_plan"]
+    },
+    "high_quality_resources": {
+      "type": "object",
+      "properties": {
+        "general": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "Resource name and URL."
+          }
+        },
+        "coding_related": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "Coding related repo or demo URL."
+          }
+        }
+      },
+      "required": ["general", "coding_related"]
+    },
+    "immediate_orientation": {
+      "type": "object",
+      "properties": {
+        "quick_exercises": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "Short practical exercise or mini-project."
+          },
+          "minItems": 1,
+          "maxItems": 2
+        }
+      },
+      "required": ["quick_exercises"]
+    }
+  },
+  "required": [
+    "rapid_fire_overview",
+    "high_value_relevance_check",
+    "ninety_ten_roadmap",
+    "high_quality_resources",
+    "immediate_orientation"
+  ],
+  "additionalProperties": false
+}
