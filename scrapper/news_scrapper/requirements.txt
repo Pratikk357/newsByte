@@ -1,4 +1,6 @@
 Scrapy==2.13.3
+# Scrapy 2.13 imports a Twisted internal that was removed in Twisted 26
+Twisted==25.5.0
 pika>=1.3.2
 nltk==3.9.1
 numpy>=2.2.4

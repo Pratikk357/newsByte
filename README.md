@@ -85,6 +85,31 @@ It collects articles from **Ekantipur** and **The Kathmandu Post**, summarizes t
 
 ## 📦 Installation
 
+### 🐳 Quick start: run everything with Docker
+
+The root `docker-compose.yml` runs the whole stack: PostgreSQL, RabbitMQ, database migrations, the REST API, the RabbitMQ consumer, the scraper + summarizer and the frontend.
+
+```bash
+cp .env.template .env        # then set JWT_SECRET and MQ_SECRET_KEY to long random strings
+docker compose up -d --build
+```
+
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:8080 |
+| REST API / Swagger | http://localhost:3000 / http://localhost:3000/swagger |
+| RabbitMQ UI | http://localhost:15672 (guest / guest) |
+
+The scraper runs all spiders on startup and then every `SCRAPE_INTERVAL` seconds (default 6 hours). Useful commands:
+
+```bash
+docker compose logs -f scrapper consumer   # watch articles being scraped and saved
+docker compose restart scrapper            # scrape again now
+docker compose down                        # stop (add -v to also delete the database)
+```
+
+To run each part by hand instead, follow the steps below.
+
 ### Prerequisites
 - **Docker** (for PostgreSQL and RabbitMQ)
 - **Node.js 20+** and npm (or pnpm)
