@@ -9,14 +9,14 @@ It collects articles from **Ekantipur** and **The Kathmandu Post**, summarizes t
 
 ## 🚀 Features
 
-- **Automated Web Scraping** — Uses **Scrapy** and **Playwright** for scalable, policy-compliant scraping of Nepali news portals.
-- **Hybrid NLP Summarization** — Summarizes articles to ~30% of their original size using a **TF-IDF-enhanced TextRank** algorithm.
-- **Asynchronous Processing** — **RabbitMQ** handles scraping, summarization, and storage pipelines in parallel for high throughput.
-- **Scalable Backend** — **NestJS** APIs with **Prisma ORM** provide efficient, secure data access.
-- **Search & Filter Support** — Full-text search with **PostgreSQL tsvector** and topic-based filtering (Politics, Business, Sports, etc.).
+- **Automated Web Scraping** — **Scrapy** spiders collect the day's articles from Ekantipur and The Kathmandu Post.
+- **Hybrid NLP Summarization** — Summarizes articles to ~30% of their sentences using a **TF-IDF-weighted TextRank** algorithm (PageRank computed by power iteration).
+- **Asynchronous Processing** — **RabbitMQ** decouples the scraper from the backend; messages are durable and persistent.
+- **Scalable Backend** — **NestJS** (Fastify) APIs with **Prisma ORM** provide efficient, type-safe data access.
+- **Search & Filter Support** — Ranked full-text search with a GIN-indexed **PostgreSQL tsvector**, plus date filtering and pagination.
 - **Responsive Frontend** — Built using **React 18** with TypeScript, optimized for both mobile and desktop.
-- **Bilingual Support** — Summarization pipeline optimized for **English** and **Nepali** news content.
-- **Secure & Reliable** — JWT-authenticated API endpoints, HTTPS communication, and WCAG 2.1 accessibility compliance.
+- **Bilingual Support** — Summarization pipeline handles **English** and **Nepali** news content.
+- **Secure** — bcrypt-hashed passwords, JWT access/refresh tokens, role-based access control, and a shared secret on queue messages.
 
 ---
 
@@ -28,11 +28,16 @@ It collects articles from **Ekantipur** and **The Kathmandu Post**, summarizes t
            └──────┬──────┘
                   │
            ┌──────▼──────┐
-           │ RabbitMQ    │  <-- Asynchronous Message Broker
+           │ Summarizer  │  <-- TF-IDF + TextRank Engine (runs inside the scraper)
            └──────┬──────┘
                   │
            ┌──────▼──────┐
-           │ Summarizer  │  <-- TF-IDF + TextRank Engine
+           │ RabbitMQ    │  <-- Asynchronous Message Broker (scraped_data_queue)
+           └──────┬──────┘
+                  │
+           ┌──────▼──────┐
+           │ NestJS      │  <-- RabbitMQ consumer (src/rabbit-mq.ts) saves articles
+           │ consumer    │
            └──────┬──────┘
                   │
          ┌────────▼────────┐
@@ -54,77 +59,103 @@ It collects articles from **Ekantipur** and **The Kathmandu Post**, summarizes t
 ## 🛠️ Tech Stack
 
 ### **Frontend**
-- **React 18** + **TypeScript**
-- **Material-UI** for responsive layouts
+- **React 18** + **TypeScript** (Vite)
+- **Tailwind CSS** + **shadcn/ui** (Radix UI) components
 - **React Query** for data synchronization
 - **Axios** for API integration
 
 ### **Backend**
-- **NestJS 9** (TypeScript-based framework)
+- **NestJS 11** on **Fastify** (TypeScript)
 - **Prisma ORM** for type-safe database interactions
-- **JWT Authentication** for secure endpoints
-- **Swagger (OpenAPI 3.0)** for API documentation
+- **JWT Authentication** with role-based access control
+- **Swagger (OpenAPI)** for API documentation at `/swagger`
 
 ### **Data Pipeline**
-- **Scrapy** + **Playwright** for dynamic web scraping
-- **RabbitMQ** for distributed task management
-- **TF-IDF + TextRank** for extractive summarization
+- **Scrapy** for web scraping
+- **NLTK** + **NumPy** for the TF-IDF + TextRank summarizer
+- **RabbitMQ** for asynchronous message passing
 
 ### **Database**
-- **PostgreSQL 14** (GIN-indexed full-text search)
+- **PostgreSQL 15** (GIN-indexed `tsvector` full-text search)
 
 ### **Infrastructure**
-- **Docker** for containerized deployment
-- **GitHub Actions** for CI/CD
-- **Prometheus** for monitoring
-- **Sentry** for error tracking
+- **Docker Compose** for PostgreSQL and RabbitMQ
 
 ---
 
 ## 📦 Installation
 
+### Prerequisites
+- **Docker** (for PostgreSQL and RabbitMQ)
+- **Node.js 20+** and npm (or pnpm)
+- **Python 3.11+**
+
 ### 1️⃣ Clone the repository
 ```bash
 git clone https://github.com/fuunshi/newsbyte.git
 cd newsbyte
-````
-
-### 2️⃣ Set up environment variables
-
-Create a `.env` file in the root directory:
-
-```env
-# Backend
-DATABASE_URL=postgresql://user:password@localhost:5432/newsbyte
-JWT_SECRET=your_jwt_secret
-RABBITMQ_URL=amqp://localhost
-
-# Frontend
-NEXT_PUBLIC_API_URL=http://localhost:3000/api
 ```
 
-### 3️⃣ Install dependencies
+### 2️⃣ Start PostgreSQL and RabbitMQ
+```bash
+cd backend
+docker compose up -d postgres rabbitmq
+```
+RabbitMQ's management UI is at http://localhost:15672 (guest / guest).
 
-#### Backend:
+### 3️⃣ Backend
+Copy `backend/.env.template` to `backend/.env` and set `JWT_SECRET` and `MQ_SECRET_KEY` to long random strings.
 
 ```bash
 cd backend
 npm install
-npx prisma migrate dev
+npx prisma migrate deploy
+npx prisma generate
+npm run start:dev            # REST API on http://localhost:3000 (Swagger at /swagger)
 ```
 
-#### Frontend:
+In a **second terminal**, start the RabbitMQ consumer that saves scraped articles:
+```bash
+cd backend
+npm run start:consumer
+```
 
+### 4️⃣ Frontend
 ```bash
 cd frontend
 npm install
+npm run dev
 ```
+The API URL is set in `frontend/src/App.tsx` (`http://localhost:3000/`).
 
-### 4️⃣ Start services
+### 5️⃣ Scraper
+Copy `scrapper/news_scrapper/.env.template` to `scrapper/news_scrapper/.env` and set `MQ_SECRET_KEY` to **the same value** as in `backend/.env`.
 
 ```bash
-docker-compose up -d
+cd scrapper/news_scrapper
+python -m venv .venv
+.venv\Scripts\activate          # Windows  (Linux/macOS: source .venv/bin/activate)
+pip install -r requirements.txt
+python -c "import nltk; [nltk.download(p) for p in ('punkt', 'punkt_tab', 'stopwords')]"
+
+scrapy crawl kantipur
+scrapy crawl kathmandu_post
 ```
+Each spider summarizes today's articles and publishes them to RabbitMQ when it finishes; the consumer then stores them in PostgreSQL.
+
+### ▶️ Start order (summary)
+
+| # | What | Command | Where |
+|---|------|---------|-------|
+| 1 | PostgreSQL + RabbitMQ | `docker compose up -d postgres rabbitmq` | `backend/` |
+| 2 | REST API | `npm run start:dev` | `backend/` |
+| 3 | RabbitMQ consumer | `npm run start:consumer` | `backend/` |
+| 4 | Frontend | `npm run dev` | `frontend/` |
+| 5 | Scraper (whenever you want fresh news) | `scrapy crawl kantipur` / `scrapy crawl kathmandu_post` | `scrapper/news_scrapper/` |
+
+For production builds use `npm run build`, then `npm run start:prod` and `npm run start:consumer:prod`.
+
+For a detailed explanation of how the system and its algorithms work, see [proj_details.md](proj_details.md).
 
 ---
 
@@ -137,17 +168,13 @@ cd backend
 npm run test
 ```
 
-### System Tests
-
-* **Scraping validation** — Ensures that news articles are collected and summarized correctly.
-* **API tests** — Validates RESTful endpoints and JWT-based authentication.
-* **Frontend tests** — Covers filters, search, and accessibility compliance.
-
 ---
 
-## 📊 Performance Benchmarks
+## 📊 Performance Targets
 
-| Feature                    | Metric                 |
+These are design targets; they are not measured by anything in this repository.
+
+| Feature                    | Target                 |
 | -------------------------- | ---------------------- |
 | Avg. Article Summarization | **< 15s per article**  |
 | API Response Time          | **< 500ms**            |

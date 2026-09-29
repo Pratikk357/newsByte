@@ -86,9 +86,9 @@ class KantipurSpider(scrapy.Spider):
         
         article_obj = {
             "title": title_text,
-            "content": summary_text,
+            "content": content_text,
             "publishedAt": datetime.now().isoformat() + "Z",
-            "summerized": summary_text,
+            "summarized": summary_text,
             "url": response.url,
             "tags": [file_path],
             "imageUrl": image_url

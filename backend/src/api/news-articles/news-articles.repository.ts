@@ -7,6 +7,17 @@ import { Prisma } from "@prisma/client";
 import { NewsArticleGetQueryDTO } from "./dto/news-article-get.query.dto";
 import { NewsArticleWithIncludes } from "./types/news-article-complex.type";
 
+// Relations returned with every listed article
+const ARTICLE_LIST_INCLUDE = {
+  articleCategories: {
+    include: {
+      category: true,
+    },
+  },
+  summaries: { where: { deletedAt: null } },
+  source: true,
+} satisfies Prisma.NewsArticleInclude;
+
 @Injectable()
 export class NewsArticlesRepository {
   private readonly logger = new Logger(NewsArticlesRepository.name);
@@ -44,8 +55,8 @@ export class NewsArticlesRepository {
   ): Promise<NewsArticleWithIncludes | null> {
     try {
       const prisma = await this.prisma.getClient(client);
-      const newsArticle = await prisma.newsArticle.findUnique({
-        where: { id },
+      const newsArticle = await prisma.newsArticle.findFirst({
+        where: { id, deletedAt: null },
         include: {
           articleCategories: {
             include: {
@@ -75,14 +86,16 @@ export class NewsArticlesRepository {
     try {
       const prisma = await this.prisma.getClient(client);
 
-      // Build Prisma where/filter object based on query
-      const where: Prisma.NewsArticleWhereInput = {};
-      if (query.q) {
-        where.OR = [
-          { title: { contains: query.q, mode: "insensitive" } },
-          { content: { contains: query.q, mode: "insensitive" } },
-        ];
+      // Pagination
+      const take = query.limit ?? 10;
+      const skip = (query.page - 1) * take;
+
+      if (query.q?.trim()) {
+        return await this.fullTextSearch(query, skip, take, prisma);
       }
+
+      // Soft-deleted articles are never listed
+      const where: Prisma.NewsArticleWhereInput = { deletedAt: null };
       if (query.dateFrom || query.dateTo) {
         where.createdAt = {};
         if (query.dateFrom) {
@@ -93,34 +106,69 @@ export class NewsArticlesRepository {
         }
       }
 
-      // Pagination
-      const skip = (query.page - 1) * query.limit;
-      const take = query.limit ?? 10;
-
-      const [total, data] = [
-        await prisma.newsArticle.count({ where }),
-        await prisma.newsArticle.findMany({
+      const [total, data] = await Promise.all([
+        prisma.newsArticle.count({ where }),
+        prisma.newsArticle.findMany({
           where,
-          include: {
-            articleCategories: {
-              include: {
-                category: true,
-              },
-            },
-            summaries: true,
-            source: true,
-          },
+          include: ARTICLE_LIST_INCLUDE,
           skip,
           take,
           orderBy: { createdAt: query.order },
         }),
-      ];
+      ]);
 
       return { total, data };
     } catch (error) {
       this.logger.error(`Error fetching news articles: ${error}`);
       handlePrismaError(error, "Failed to fetch news articles.");
     }
+  }
+
+  /**
+   * Full-text search using the GIN-indexed "searchVector" tsvector column
+   * (title weighted A, content weighted B). Results are ranked by ts_rank,
+   * then by createdAt in the requested order.
+   */
+  private async fullTextSearch(
+    query: NewsArticleGetQueryDTO,
+    skip: number,
+    take: number,
+    prisma: Prisma.TransactionClient,
+  ): Promise<{ total: number; data: NewsArticleWithIncludes[] }> {
+    // 'simple' config: no language-specific stemming, so it works for Nepali and English
+    const tsQuery = Prisma.sql`websearch_to_tsquery('simple', ${query.q!.trim()})`;
+    const conditions = [
+      Prisma.sql`"deletedAt" IS NULL`,
+      Prisma.sql`"searchVector" @@ ${tsQuery}`,
+    ];
+    if (query.dateFrom) {
+      conditions.push(Prisma.sql`"createdAt" >= ${new Date(query.dateFrom)}`);
+    }
+    if (query.dateTo) {
+      conditions.push(Prisma.sql`"createdAt" <= ${new Date(query.dateTo)}`);
+    }
+    const where = Prisma.join(conditions, " AND ");
+    const order = Prisma.raw(query.order === "asc" ? "ASC" : "DESC");
+
+    const [countRows, idRows] = await Promise.all([
+      prisma.$queryRaw<{ count: number }[]>`
+        SELECT COUNT(*)::int AS count FROM "NewsArticle" WHERE ${where}`,
+      prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "NewsArticle" WHERE ${where}
+        ORDER BY ts_rank("searchVector", ${tsQuery}) DESC, "createdAt" ${order}
+        LIMIT ${take} OFFSET ${skip}`,
+    ]);
+
+    const ids = idRows.map((row) => row.id);
+    const articles = await prisma.newsArticle.findMany({
+      where: { id: { in: ids } },
+      include: ARTICLE_LIST_INCLUDE,
+    });
+    // findMany does not keep the ranked order, so restore it
+    const rank = new Map(ids.map((id, i) => [id, i]));
+    articles.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+
+    return { total: countRows[0]?.count ?? 0, data: articles };
   }
 
   /**

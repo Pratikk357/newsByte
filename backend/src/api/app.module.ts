@@ -15,11 +15,13 @@ import { HttpExceptionFilter } from "@/filter/http-exception.filter";
 import { AuthGuard } from "@/guard/auth.guard";
 import { RolesGuard } from "@/guard/roles.guard";
 import { Module, ValidationPipe } from "@nestjs/common";
+import { ConfigModule } from "@nestjs/config";
 import { APP_FILTER, APP_GUARD, APP_PIPE } from "@nestjs/core";
 import { SourceModule } from "./source/source.module";
 
 @Module({
   imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
     AuthModule,
     UsersModule,
     PrismaModule,

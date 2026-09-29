@@ -1,8 +1,12 @@
 import pika
 import json
 from os import environ
+from dotenv import load_dotenv
 
-RABBITMQ_HOST = "localhost"
+# Reads scrapper/news_scrapper/.env (see .env.template) into the environment
+load_dotenv()
+
+RABBITMQ_HOST = environ.get("RABBITMQ_HOST", "localhost")
 QUEUE_NAME = "scraped_data_queue"
 
 def publish_bulk(source: str, articles: list):
@@ -16,8 +20,10 @@ def publish_bulk(source: str, articles: list):
         print(f"⚠ No articles to send for {source}")
         return
 
-    # auth_key = environ.get("SECRET_MQ_KEY")   
-    auth_key="alskdnkasjoiqkmeksamd09j12k90-asdk/dasv/d.3v"
+    # Must match MQ_SECRET_KEY in backend/.env, otherwise the backend drops the message
+    auth_key = environ.get("MQ_SECRET_KEY")
+    if not auth_key:
+        raise RuntimeError("MQ_SECRET_KEY is not set. Add it to scrapper/news_scrapper/.env")
     message = {
         "pattern": "summarised.articles",
         "data": {

@@ -79,8 +79,11 @@ export class AuthService {
   ): Promise<ResponseDTO<RefreshResponseDTO>> {
     try {
       const { refreshToken } = refreshDTO;
-      const decoded = this.jwtService.decode(refreshToken);
-      if (!decoded) throw new UnauthorizedException("Invalid refresh token");
+      const decoded = await this.jwtService
+        .verifyAsync(refreshToken)
+        .catch(() => null);
+      if (!decoded || decoded.type !== "refresh")
+        throw new UnauthorizedException("Invalid refresh token");
 
       const userId = decoded["userId"];
       const user = await this.userRepository.findById(userId);
@@ -159,7 +162,7 @@ export class AuthService {
    */
   private generateRefreshJwt(userId: string, role: Role): string {
     return this.jwtService.sign(
-      { userId, role },
+      { userId, role, type: "refresh" },
       {
         expiresIn: "7d",
       },

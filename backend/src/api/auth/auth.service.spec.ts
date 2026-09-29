@@ -64,7 +64,7 @@ describe("AuthService", () => {
           provide: JwtService,
           useValue: {
             sign: jest.fn(),
-            decode: jest.fn(),
+            verifyAsync: jest.fn(),
           },
         },
       ],
@@ -146,7 +146,11 @@ describe("AuthService", () => {
         refreshToken: "valid-token",
       };
 
-      jwtService.decode.mockReturnValue({ userId: "user-id", role: Role.USER });
+      jwtService.verifyAsync.mockResolvedValue({
+        userId: "user-id",
+        role: Role.USER,
+        type: "refresh",
+      });
       userRepository.findById.mockResolvedValue(mockUser);
       jwtService.sign
         .mockReturnValueOnce("new-access-token")
@@ -158,10 +162,21 @@ describe("AuthService", () => {
     });
 
     it("should throw if refresh token is invalid", async () => {
-      jwtService.decode.mockReturnValue(null);
+      jwtService.verifyAsync.mockRejectedValue(new Error("invalid signature"));
 
       await expect(
         service.refreshLoginToken({ refreshToken: "bad-token" }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it("should throw if an access token is used as a refresh token", async () => {
+      jwtService.verifyAsync.mockResolvedValue({
+        userId: "user-id",
+        role: Role.USER,
+      });
+
+      await expect(
+        service.refreshLoginToken({ refreshToken: "access-token" }),
       ).rejects.toThrow(UnauthorizedException);
     });
   });

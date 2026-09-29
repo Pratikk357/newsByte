@@ -79,7 +79,7 @@ class KathmanduPostSpider(scrapy.Spider):
         self.collected_articles.append({
             "title": title_text,
             "content": content_text,
-            "summerized": summary_text,
+            "summarized": summary_text,
             "publishedAt": datetime.now().isoformat() + "Z",
             "url": response.url,
             "tags": [file_path],

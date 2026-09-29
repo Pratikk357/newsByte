@@ -21,9 +21,6 @@ export class NewsArticleBodyMQDTO {
   @IsNotEmpty()
   content: string;
 
-  @ApiProperty({ description: "Sumerized content of the news article" })
-  @IsString()
-  @IsNotEmpty()
   @ApiProperty({ description: "Summarized content of the news article" })
   @IsString()
   @IsNotEmpty()

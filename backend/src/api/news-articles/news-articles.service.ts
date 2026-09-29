@@ -167,15 +167,11 @@ export class NewsArticlesService {
     newsArticleCreateMQDTO: NewsArticleCreateMQDTO,
   ): Promise<void> {
     try {
-      if (!newsArticleCreateMQDTO.authKey) {
-        return
-      }
-      if (newsArticleCreateMQDTO.authKey !== process.env.MQ_SECRET_KEY) {
-        this.logger.warn("Missing authKey in NewsArticleCreateMQDTO. Aborting import.");
-        return;
-      }
-      if (newsArticleCreateMQDTO.authKey !== process.env.MQ_SECRET_KEY) {
-        this.logger.warn("Invalid authKey provided in NewsArticleCreateMQDTO. Aborting import.");
+      if (
+        !newsArticleCreateMQDTO.authKey ||
+        newsArticleCreateMQDTO.authKey !== process.env.MQ_SECRET_KEY
+      ) {
+        this.logger.warn("Missing or invalid authKey in NewsArticleCreateMQDTO. Aborting import.");
         return;
       }
       // Find or create source
@@ -198,91 +194,95 @@ export class NewsArticlesService {
       }
       const sourceId = source.id;
 
-      // Prepare articles
+      // Prepare articles, normalising tags like "/national/" to "national"
       this.logger.log(
-        `Preparing articles for bulk insert. Count: ${newsArticleCreateMQDTO.data.length}`,
+        `Preparing articles for import. Count: ${newsArticleCreateMQDTO.data.length}`,
       );
-      const articles = newsArticleCreateMQDTO.data.map((article, idx) => {
-        this.logger.log(`Preparing article #${idx + 1}: ${article.title}`);
-        return {
-          title: article.title,
-          content: article.content,
-          publishedDate: article.publishedAt
-            ? new Date(article.publishedAt)
-            : new Date(),
-          url: article.url,
-          tags: (article.tags ?? []).map(tag =>
-            tag.replace(/^\/|\/$/g, "").trim()
+      const articles = newsArticleCreateMQDTO.data.map((article) => ({
+        ...article,
+        tags: [
+          ...new Set(
+            (article.tags ?? [])
+              .map((tag) => tag.replace(/^\/|\/$/g, "").trim())
+              .filter(Boolean),
           ),
-          imageUrl: article.imageUrl,
-          sourceId,
-        };
-      });
-      console.log(articles[0].tags)
+        ],
+      }));
 
-      const allTags = [
-        ...new Set(
-          newsArticleCreateMQDTO.data.flatMap(article => article.tags ?? [])
-        )
-      ];
-
-      await Promise.all(
-        allTags.map(tag =>
+      // Make sure every category exists and remember its id
+      const allTags = [...new Set(articles.flatMap((article) => article.tags))];
+      const categories = await Promise.all(
+        allTags.map((tag) =>
           this.prisma.category.upsert({
             where: { name: tag },
             update: {},
-            create: { name: tag }
-          })
-        )
+            create: { name: tag },
+          }),
+        ),
+      );
+      const categoryIdByName = new Map(categories.map((c) => [c.name, c.id]));
+
+      // Save each article in its own transaction. Upserting by the unique url makes
+      // re-scraping idempotent: the article is updated instead of duplicated.
+      this.logger.log(`Saving articles into DB. Count: ${articles.length}`);
+      const results = await Promise.allSettled(
+        articles.map((article) =>
+          this.prisma.$transaction(async (tx) => {
+            const saved = await this.newsRepo.upsert(
+              {
+                where: { url: article.url },
+                update: {
+                  title: article.title,
+                  content: article.content,
+                  imageUrl: article.imageUrl,
+                  sourceId,
+                },
+                create: {
+                  title: article.title,
+                  content: article.content,
+                  publishedDate: article.publishedAt
+                    ? new Date(article.publishedAt)
+                    : new Date(),
+                  url: article.url,
+                  imageUrl: article.imageUrl,
+                  sourceId,
+                },
+              },
+              tx,
+            );
+
+            // Links that already exist are skipped instead of violating the composite key
+            await tx.articleCategory.createMany({
+              data: article.tags.map((tag) => ({
+                articleId: saved.id,
+                categoryId: categoryIdByName.get(tag)!,
+              })),
+              skipDuplicates: true,
+            });
+
+            // Only store a new summary when it differs from the latest one
+            if (article.summarized) {
+              const latest = await tx.summary.findFirst({
+                where: { articleId: saved.id, deletedAt: null },
+                orderBy: { createdAt: "desc" },
+              });
+              if (latest?.summaryText !== article.summarized) {
+                await tx.summary.create({
+                  data: { articleId: saved.id, summaryText: article.summarized },
+                });
+              }
+            }
+          }),
+        ),
       );
 
-      // Insert articles
-      this.logger.log(`Inserting articles into DB. Count: ${articles.length}`);
-      const insertPromises = newsArticleCreateMQDTO.data.map(article => this.newsRepo.upsert({
-        where: { url: article.url },
-        update: {
-          title: article.title,
-          content: article.content,
-          publishedDate: article.publishedAt ? new Date(article.publishedAt) : new Date(),
-          url: article.url,
-          imageUrl: article.imageUrl,
-          sourceId,
-          summaries: {
-            create: {
-              summaryText: article.summerized,
-            }
-          },
-          articleCategories: {
-            create: (article.tags ?? []).map(tag => ({
-              category: { connect: { name: tag } }
-            })),
-          },
-        },
-        create: {
-          title: article.title,
-          content: article.content,
-          publishedDate: article.publishedAt ? new Date(article.publishedAt) : new Date(),
-          url: article.url,
-          sourceId,
-          imageUrl: article.imageUrl,
-          summaries: {
-            create: {
-              summaryText: article.summerized,
-            }
-          },
-          articleCategories: {
-            create: (article.tags ?? []).map(tag => ({
-              category: { connect: { name: tag } }
-            })),
-          },
-        }
-      }));
-      const insertedArticles = await Promise.all(insertPromises);
-      const insertedCount = insertedArticles.length;
-      this.logger.log(`Inserted articles count: ${insertedCount}`);
+      const failed = results.filter((r) => r.status === "rejected");
+      failed.forEach((r) => this.logger.error((r as PromiseRejectedResult).reason));
+      this.logger.log(
+        `Saved ${results.length - failed.length} of ${results.length} articles.`,
+      );
     } catch (error) {
       this.logger.error({ error });
-      // handleError(error, "Error importing news articles from MQ.", this.logger);
     }
   }
 }

@@ -9,10 +9,13 @@ import { JwtModule } from "@nestjs/jwt";
 @Module({
   imports: [
     PrismaModule,
-    JwtModule.register({
+    JwtModule.registerAsync({
       global: true,
-      secret: process.env.JWT_SECRET || "your-secret-key",
-      signOptions: { expiresIn: "1d" },
+      useFactory: () => {
+        const secret = process.env.JWT_SECRET;
+        if (!secret) throw new Error("JWT_SECRET is not set in backend/.env");
+        return { secret, signOptions: { expiresIn: "1d" } };
+      },
     }),
     UsersModule,
   ],

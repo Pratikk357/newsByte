@@ -28,82 +28,73 @@ def rouge(text,summ):
     return metrics
 
 def nepali_sent_tokenize(text):
-    sentences = re.split(r'[।.!?]\s*', text)
+    # Keep the ending punctuation (।, ., !, ?) with its sentence so the summary reads naturally
+    sentences = re.findall(r'[^।.!?]+[।.!?]?', text)
     return [s.strip() for s in sentences if s.strip()]
 
-def summarize_from_scratch(text,lang="english",damp_fact=0.15):
-    sw = stopwords.words(lang)
+def summarize_from_scratch(text,lang="english",damp_fact=0.15,max_iter=100,tol=1e-6):
+    sw = set(stopwords.words(lang))
     if lang == "nepali":
         ultra_raw_data = nepali_sent_tokenize(text)
-    else: 
+    else:
         ultra_raw_data = sent_tokenize(text)
 
-    sum_length = int(len(ultra_raw_data)*0.3) if len(ultra_raw_data)>3 else 1
-    stemmer = PorterStemmer()
-    raw_data = [[stemmer.stem(word.lower()) for word in word_tokenize(sent) if word.lower() not in sw and word not in string.punctuation] for sent in ultra_raw_data]
+    total_doc = len(ultra_raw_data)
+    if total_doc == 0:
+        return ""
+    sum_length = int(total_doc*0.3) if total_doc>3 else 1
 
-    # print(raw_data)
-    vocab = set()
-    raw_data_dict =[]
-    
-    words_occ_in_entire_doc = {}
-    total_doc = len(raw_data)
-    
-    for sent in raw_data:
-        temp_dict = {}
-        for word in sent:
-            if word in temp_dict:
-                temp_dict[word]+=1
-            else:
-                temp_dict[word]=1
+    # Porter stemmer only knows English suffixes, so Nepali words are kept as-is
+    stemmer = PorterStemmer() if lang == "english" else None
+    raw_data = []
+    for sent in ultra_raw_data:
+        # "।" is not in string.punctuation and word_tokenize glues it to the last word, so strip it first
+        words = [word.lower() for word in word_tokenize(sent.replace("।", " ")) if word.lower() not in sw and word not in string.punctuation]
+        if stemmer:
+            words = [stemmer.stem(word) for word in words]
+        raw_data.append(words)
 
-            if word in words_occ_in_entire_doc:
-                words_occ_in_entire_doc[word]+=1
-            else:
-                words_occ_in_entire_doc[word]=1
-                vocab.add(word)
-            
-        raw_data_dict.append(temp_dict)
+    # Document frequency: number of sentences (our "documents") that contain each word
+    doc_freq = Counter(word for sent in raw_data for word in set(sent))
+    vocab = {word: j for j, word in enumerate(doc_freq)}
 
-    sent_vectors = []
-    for i,sent in enumerate(raw_data_dict):
-        vec = np.zeros(len(vocab))
-        for j, word in enumerate(vocab):
-            if word in sent:
-                tf = sent[word]/len(raw_data[i])
-                idf = np.log(total_doc/words_occ_in_entire_doc.get(word,1)) 
-                vec[j] = tf*idf
-        sent_vectors.append(vec)
+    # TF-IDF vector for every sentence
+    sent_vectors = np.zeros((total_doc, len(vocab)))
+    for i, sent in enumerate(raw_data):
+        for word, count in Counter(sent).items():
+            tf = count/len(sent)
+            idf = np.log(total_doc/doc_freq[word])
+            sent_vectors[i][vocab[word]] = tf*idf
 
-    # print(sent_vectors)
+    # Cosine similarity between sentences (edges of the TextRank graph).
+    # Sentences with an all-zero vector get similarity 0 instead of dividing by zero.
+    norms = np.linalg.norm(sent_vectors, axis=1)
+    similarity_matrix = np.zeros((total_doc, total_doc))
+    for i in range(total_doc):
+        for j in range(i+1, total_doc):
+            if norms[i] > 0 and norms[j] > 0:
+                cosine_similarity = np.dot(sent_vectors[i], sent_vectors[j])/(norms[i]*norms[j])
+                similarity_matrix[i][j] = similarity_matrix[j][i] = cosine_similarity
 
-    similarity_matrix = np.identity(len(sent_vectors))
-    
-    for i in range(0,len(sent_vectors)):
-        for j in range(i+1,len(sent_vectors)):
-            cosine_similarity = np.dot(sent_vectors[i],sent_vectors[j])/(np.linalg.norm(sent_vectors[i])*np.linalg.norm(sent_vectors[j]))
-            similarity_matrix[i][j] = similarity_matrix[j][i] = cosine_similarity
+    # Column-normalise into a transition matrix. A sentence with no similar
+    # sentences (a "dangling node") links to every sentence equally, as in PageRank.
+    col_sums = similarity_matrix.sum(axis=0)
+    A = np.where(col_sums > 0, similarity_matrix/np.where(col_sums > 0, col_sums, 1), 1/total_doc)
 
-    
-    similarity_matrix/=similarity_matrix.sum(axis=0,keepdims=True)
-    
-    A = similarity_matrix
-    B = np.ones_like(A)/len(A)
+    # PageRank by power iteration: r = (1-p)·A·r + p/N, repeated until it stops changing.
+    # The fixed point is the eigenvector of M = (1-p)A + p/N with eigenvalue 1.
     p = damp_fact
-    M = (1-p)*A + p*B
+    scores = np.ones(total_doc)/total_doc
+    for _ in range(max_iter):
+        new_scores = (1-p)*A.dot(scores) + p/total_doc
+        converged = np.abs(new_scores - scores).sum() < tol
+        scores = new_scores
+        if converged:
+            break
 
-    _, eigenvectors = np.linalg.eig(M)
-
-
-    scores = eigenvectors[:,0]/eigenvectors[:,0].sum()
-    print(scores)
-
-    # for i,s in enumerate(ultra_raw_data):
-    #    print(f"{round(scores[i],2)} : {s}")
-    # 
-# 
-    # return " ".join(tup[1] for tup in sorted([(scores[i],s) for i,s in enumerate(ultra_raw_data)])[:sum_length])   
-    return " ".join(str(tup[2]) for tup in (sorted((d[1],d[0],d[2]) for d in sorted([(scores[i],i,s) for i,s in enumerate(ultra_raw_data)],reverse=True)[:sum_length])))
+    # Pick the highest-scoring sentences, then restore their original order
+    top = sorted(range(total_doc), key=lambda i: scores[i], reverse=True)[:sum_length]
+    return " ".join(ultra_raw_data[i] for i in sorted(top))
 
 
 # texts=["""
