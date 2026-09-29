@@ -210,6 +210,7 @@ These are design targets; they are not measured by anything in this repository.
 | ------------------- | ------------------------------------------------------------ |
 | **Pranil Shrestha** | Backend & Scrapper; collaborated on frontend and NLP modules |
 | **Sumit Shrestha**  | Frontend & NLP modules; collaborated on backend and Scrapper |
+| **Pratik Sharma**   | Full-text search, auth & message-queue security, scrapper and summarizer updates |
 
 ---
 
