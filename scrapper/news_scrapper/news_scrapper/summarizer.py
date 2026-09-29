@@ -32,15 +32,22 @@ def nepali_sent_tokenize(text):
     return [s.strip() for s in sentences if s.strip()]
 
 def summarize_from_scratch(text,lang="english",damp_fact=0.15):
+    if not text or not text.strip():
+        return ""
     sw = stopwords.words(lang)
     if lang == "nepali":
         ultra_raw_data = nepali_sent_tokenize(text)
     else: 
         ultra_raw_data = sent_tokenize(text)
 
+    if not ultra_raw_data:
+        return text.strip()
+
     sum_length = int(len(ultra_raw_data)*0.3) if len(ultra_raw_data)>3 else 1
     stemmer = PorterStemmer()
     raw_data = [[stemmer.stem(word.lower()) for word in word_tokenize(sent) if word.lower() not in sw and word not in string.punctuation] for sent in ultra_raw_data]
+    if not any(raw_data) or len(ultra_raw_data) == 1:
+        return ultra_raw_data[0]
 
     # print(raw_data)
     vocab = set()
@@ -81,11 +88,13 @@ def summarize_from_scratch(text,lang="english",damp_fact=0.15):
     
     for i in range(0,len(sent_vectors)):
         for j in range(i+1,len(sent_vectors)):
-            cosine_similarity = np.dot(sent_vectors[i],sent_vectors[j])/(np.linalg.norm(sent_vectors[i])*np.linalg.norm(sent_vectors[j]))
+            denom = (np.linalg.norm(sent_vectors[i])*np.linalg.norm(sent_vectors[j]))
+            cosine_similarity = (np.dot(sent_vectors[i],sent_vectors[j])/denom) if denom else 0
             similarity_matrix[i][j] = similarity_matrix[j][i] = cosine_similarity
 
     
-    similarity_matrix/=similarity_matrix.sum(axis=0,keepdims=True)
+    col_sums = similarity_matrix.sum(axis=0,keepdims=True)
+    similarity_matrix = np.divide(similarity_matrix, col_sums, out=np.zeros_like(similarity_matrix), where=col_sums!=0)
     
     A = similarity_matrix
     B = np.ones_like(A)/len(A)
@@ -95,7 +104,11 @@ def summarize_from_scratch(text,lang="english",damp_fact=0.15):
     _, eigenvectors = np.linalg.eig(M)
 
 
-    scores = eigenvectors[:,0]/eigenvectors[:,0].sum()
+    scores = np.real(eigenvectors[:,0])
+    score_sum = scores.sum()
+    if score_sum == 0:
+        return " ".join(ultra_raw_data[:sum_length])
+    scores = scores/score_sum
     print(scores)
 
     # for i,s in enumerate(ultra_raw_data):

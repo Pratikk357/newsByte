@@ -73,16 +73,20 @@ class KathmanduPostSpider(scrapy.Spider):
 
         # Extract the content from <p> tags
         contents = response.css('section.story-section p::text').getall()
+        if not contents:
+            contents = response.css('div.story-section p::text, article p::text').getall()
         content_text = ' '.join([c.strip() for c in contents if c.strip()])
-        summary_text = summarizer.summarize_from_scratch(content_text)
+        if not content_text:
+            content_text = response.css('meta[name="description"]::attr(content)').get(default="") or title_text
+        summary_text = summarizer.summarize_from_scratch(content_text) or content_text
         print(f"Extracted contents: {contents}")
         self.collected_articles.append({
             "title": title_text,
             "content": content_text,
-            "summerized": summary_text,
+            "summarized": summary_text,
             "publishedAt": datetime.now().isoformat() + "Z",
             "url": response.url,
-            "tags": [file_path],
+            "tags": [file_path.lstrip("/")],
             "imageUrl": image_url
         })
 

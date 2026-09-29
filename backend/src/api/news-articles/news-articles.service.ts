@@ -249,7 +249,7 @@ export class NewsArticlesService {
           sourceId,
           summaries: {
             create: {
-              summaryText: article.summerized,
+              summaryText: article.summarized,
             }
           },
           articleCategories: {
@@ -267,7 +267,7 @@ export class NewsArticlesService {
           imageUrl: article.imageUrl,
           summaries: {
             create: {
-              summaryText: article.summerized,
+              summaryText: article.summarized,
             }
           },
           articleCategories: {

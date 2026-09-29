@@ -8,6 +8,8 @@ RUN npm install
 
 COPY . .
 
+RUN npm run migrate:generate
+
 RUN npm run build
 
 CMD ["node", "dist/main"]
