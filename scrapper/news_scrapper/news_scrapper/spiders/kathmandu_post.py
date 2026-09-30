@@ -17,9 +17,23 @@ class KathmanduPostSpider(scrapy.Spider):
     allowed_domains = ["kathmandupost.com"]
     start_urls = ["https://kathmandupost.com/"]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, urls=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.collected_articles = []
+        # Optional comma-separated article URLs to re-scrape (e.g. to backfill older
+        # articles): scrapy crawl kathmandu_post -a urls="https://...,https://..."
+        self.backfill_urls = [u.strip() for u in urls.split(",") if u.strip()] if urls else []
+
+    def start_requests(self):
+        if not self.backfill_urls:
+            yield from super().start_requests()
+            return
+        for url in self.backfill_urls:
+            yield scrapy.Request(url=url, callback=self.parse_title, meta={
+                'file_path': None,
+                'link': url,
+                'title_link': url
+            })
 
     def closed(self, reason):
         # print(self.collected_articles, "THIS IS COLLECTED ARTICLES")
@@ -71,8 +85,8 @@ class KathmanduPostSpider(scrapy.Spider):
         title_text = response.css('h1::text').get(default="").strip()
         image_url = response.css('meta[property="og:image"]::attr(content)').get()
 
-        # Extract the content from <p> tags
-        contents = response.css('section.story-section p::text').getall()
+        # Extract the content from <p> tags, including text nested in <span>/<a>/etc.
+        contents = response.css('section.story-section p ::text').getall()
         content_text = ' '.join([c.strip() for c in contents if c.strip()])
         summary_text = summarizer.summarize_from_scratch(content_text)
         print(f"Extracted contents: {contents}")
@@ -82,7 +96,8 @@ class KathmanduPostSpider(scrapy.Spider):
             "summarized": summary_text,
             "publishedAt": datetime.now().isoformat() + "Z",
             "url": response.url,
-            "tags": [file_path],
+            # Backfilled articles keep the categories they were saved with
+            "tags": [file_path] if file_path else [],
             "imageUrl": image_url
         })
 

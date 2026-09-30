@@ -22,6 +22,11 @@ import { NewsArticleCreateMQDTO } from "./dto/news-article.create.mq";
 import { SourceRepository } from "../source/source.repository";
 import { NewsArticleDetailResponseDTO } from "./dto/news-ariticle-details.dto";
 import { PrismaService } from "../prisma/prisma.service";
+import { detectLanguage, findSameStoryLeads } from "./story-similarity";
+import { toMainCategory } from "../categories/main-categories";
+
+// Articles published within this many days are compared when grouping stories
+const STORY_GROUPING_DAYS = 3;
 
 @Injectable()
 export class NewsArticlesService {
@@ -48,6 +53,7 @@ export class NewsArticlesService {
         publishedDate: new Date(newsArticleDTO.publishedAt ?? ""),
         sourceId: newsArticleDTO.sourceId,
         url: newsArticleDTO.url,
+        language: detectLanguage(`${newsArticleDTO.title} ${newsArticleDTO.content}`),
       });
       if (!newsArticle)
         throw new ConflictException("Error during news article creation.");
@@ -194,7 +200,8 @@ export class NewsArticlesService {
       }
       const sourceId = source.id;
 
-      // Prepare articles, normalising tags like "/national/" to "national"
+      // Prepare articles, mapping each site's section names (e.g. "/money/",
+      // "gandaki-pradesh") to the main categories (e.g. "business", "regional")
       this.logger.log(
         `Preparing articles for import. Count: ${newsArticleCreateMQDTO.data.length}`,
       );
@@ -203,8 +210,8 @@ export class NewsArticlesService {
         tags: [
           ...new Set(
             (article.tags ?? [])
-              .map((tag) => tag.replace(/^\/|\/$/g, "").trim())
-              .filter(Boolean),
+              .filter((tag) => tag.replace(/\//g, "").trim())
+              .map(toMainCategory),
           ),
         ],
       }));
@@ -228,6 +235,7 @@ export class NewsArticlesService {
       const results = await Promise.allSettled(
         articles.map((article) =>
           this.prisma.$transaction(async (tx) => {
+            const language = detectLanguage(`${article.title} ${article.content}`);
             const saved = await this.newsRepo.upsert(
               {
                 where: { url: article.url },
@@ -235,6 +243,7 @@ export class NewsArticlesService {
                   title: article.title,
                   content: article.content,
                   imageUrl: article.imageUrl,
+                  language,
                   sourceId,
                 },
                 create: {
@@ -245,6 +254,7 @@ export class NewsArticlesService {
                     : new Date(),
                   url: article.url,
                   imageUrl: article.imageUrl,
+                  language,
                   sourceId,
                 },
               },
@@ -281,8 +291,32 @@ export class NewsArticlesService {
       this.logger.log(
         `Saved ${results.length - failed.length} of ${results.length} articles.`,
       );
+
+      await this.groupRecentStories();
     } catch (error) {
       this.logger.error({ error });
     }
+  }
+
+  /**
+   * Groups recent articles from different sources that report the same story
+   * (TF-IDF + cosine similarity, see story-similarity.ts). Every article that is
+   * neither grouped nor a lead is re-checked, so articles saved before this
+   * feature existed are grouped too.
+   */
+  async groupRecentStories(): Promise<void> {
+    const since = new Date(Date.now() - STORY_GROUPING_DAYS * 24 * 60 * 60 * 1000);
+    const articles = await this.newsRepo.findForStoryGrouping(since);
+
+    const pendingIds = new Set(
+      articles
+        .filter((a) => a.storyId === null && a._count.storyArticles === 0)
+        .map((a) => a.id),
+    );
+    const leads = findSameStoryLeads(articles, pendingIds);
+    if (leads.size === 0) return;
+
+    await this.newsRepo.setStoryIds(leads);
+    this.logger.log(`Grouped ${leads.size} articles into stories covered by other sources.`);
   }
 }

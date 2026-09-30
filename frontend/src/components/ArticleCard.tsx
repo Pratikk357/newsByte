@@ -1,7 +1,8 @@
-import { Clock, ExternalLink, Share2 } from "lucide-react";
+import { Clock, ExternalLink, Layers, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { StoryCoverage, coverageSources, sourceName } from "@/lib/sources";
 
 interface ArticleCardProps {
   id: string;
@@ -12,6 +13,7 @@ interface ArticleCardProps {
   url: string;
   category?: string;
   imageUrl?: string;
+  coverage?: StoryCoverage[];
   onClick?: () => void;
 }
 
@@ -23,8 +25,11 @@ const ArticleCard = ({
   url,
   category,
   imageUrl,
+  coverage,
   onClick
 }: ArticleCardProps) => {
+  const alsoCoveredBy = coverageSources(coverage);
+
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
     const now = new Date();
@@ -55,7 +60,7 @@ const ArticleCard = ({
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center space-x-2">
             <Badge variant="secondary" className="text-xs">
-              {source}
+              {sourceName(source)}
             </Badge>
             {category && (
               <Badge variant="outline" className="text-xs">
@@ -78,6 +83,16 @@ const ArticleCard = ({
         <p className="text-muted-foreground text-sm leading-relaxed line-clamp-3 mb-4">
           {summary}
         </p>
+
+        {alsoCoveredBy.length > 0 && (
+          <p className="flex items-start text-xs text-muted-foreground mb-4">
+            <Layers className="w-3 h-3 mr-1.5 mt-0.5 shrink-0" />
+            <span>
+              Also covered by{" "}
+              <span className="font-medium text-foreground">{alsoCoveredBy.join(", ")}</span>
+            </span>
+          </p>
+        )}
         
         <div className="flex items-center justify-between">
           <Button 

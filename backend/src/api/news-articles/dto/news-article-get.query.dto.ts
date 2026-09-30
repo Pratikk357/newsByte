@@ -5,9 +5,12 @@ import {
   Min,
   Max,
   IsDateString,
+  IsEnum,
+  IsIn,
 } from "class-validator";
 import { Type } from "class-transformer";
-import { Prisma } from "@prisma/client";
+import { Language, Prisma } from "@prisma/client";
+import { MAIN_CATEGORIES, MainCategory } from "@/api/categories/main-categories";
 
 export class NewsArticleGetQueryDTO {
   @IsOptional()
@@ -38,8 +41,11 @@ export class NewsArticleGetQueryDTO {
 
   order: Prisma.SortOrder = "desc";
 
-  // Add more filters as needed
-  // @IsOptional()
-  // @IsString()
-  // category?: string;
+  @IsOptional()
+  @IsEnum(Language)
+  language?: Language; // "en" or "ne"
+
+  @IsOptional()
+  @IsIn(MAIN_CATEGORIES)
+  category?: MainCategory; // e.g. "sports"
 }

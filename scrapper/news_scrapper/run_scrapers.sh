@@ -5,7 +5,7 @@
 INTERVAL="${SCRAPE_INTERVAL:-21600}"
 
 while true; do
-  for spider in kantipur kathmandu_post; do
+  for spider in kantipur kathmandu_post onlinekhabar himalayan_times; do
     echo "=== Running spider: $spider ==="
     scrapy crawl "$spider" || echo "Spider $spider failed"
   done

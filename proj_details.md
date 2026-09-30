@@ -6,7 +6,7 @@ This document explains how NewsByte works, which algorithms it uses and why the 
 
 ## 1. What the project does
 
-NewsByte collects the day's news from two Nepali news portals, **Ekantipur** (Nepali) and **The Kathmandu Post** (English). It shortens each article to about 30% of its sentences and shows the summaries on a website, with search and filtering.
+NewsByte collects the day's news from four Nepali news portals: **Ekantipur** and **Onlinekhabar** (Nepali), and **The Kathmandu Post** and **The Himalayan Times** (English). It shortens each article to about 30% of its sentences and shows the summaries on a website, with search and filtering.
 
 ```
 Scrapy spiders ──► summarizer.py ──► RabbitMQ queue ──► NestJS consumer ──► PostgreSQL ◄── NestJS REST API ◄── React frontend
@@ -27,9 +27,12 @@ The scraper talks to the backend **only through RabbitMQ**, and the frontend tal
 
 ## 2. Scraper (Python + Scrapy)
 
-Files: `scrapper/news_scrapper/news_scrapper/spiders/kantipur.py` and `kathmandu_post.py`.
+Files: `scrapper/news_scrapper/news_scrapper/spiders/kantipur.py`, `kathmandu_post.py`, `onlinekhabar.py` and `himalayan_times.py`.
 
-Each spider crawls in three levels:
+The spiders find articles in two ways:
+- **Onlinekhabar and The Himalayan Times read the sites' RSS feeds** (one feed per category). Each feed item gives the link, publish date and category; the spider keeps articles **published in the last 24 hours** and opens each one for the full text (the feeds only carry excerpts). Feeds change far less often than page HTML, so these spiders break less.
+- **Onlinekhabar is capped** because it publishes far more than the others (~100 articles a day). Its spider reads all its category feeds first, then keeps only the **newest 20 articles per run**, taken round-robin across categories (the newest of each category in turn) so one busy category cannot fill every slot. Change it with `scrapy crawl onlinekhabar -a max_articles=N`.
+- **Ekantipur and The Kathmandu Post have no usable feed**, so their spiders crawl the HTML in three levels:
 
 | Step | Method | What it does |
 |------|--------|--------------|
@@ -39,10 +42,11 @@ Each spider crawls in three levels:
 
 Details:
 - **CSS selectors** (e.g. `div.row div.description p::text`) locate elements on each page. If a news site changes its HTML, the selectors must be updated.
-- **Category** = the menu path, e.g. `/news` becomes the tag `news`.
+- **Category** = the site's own section, e.g. `/news` becomes the tag `news`. Every site names its sections differently, so when saving, the backend maps each tag onto **10 main categories** (National, Politics, Business, World, Regional, Sports, Entertainment, Technology, Health, Opinion), e.g. `money` → business, `international` → world, `gandaki-pradesh` → regional, unknown → national (`src/api/categories/main-categories.ts`). The website's tabs are these 10 categories and filter with `?category=` in the API.
 - Articles are collected in `self.collected_articles` and published to RabbitMQ **once**, in `closed()`, when the spider finishes.
 - **Scrapy is asynchronous.** It runs on the Twisted event loop and downloads many pages at the same time.
-- **Language:** Ekantipur is summarized as `"nepali"`, and Kathmandu Post as English.
+- **Language:** Ekantipur and Onlinekhabar are summarized as `"nepali"`; Kathmandu Post and The Himalayan Times as English.
+- **User agent:** The Himalayan Times' firewall returns 403 for Scrapy's default user agent, so that spider identifies itself as `NewsByte/1.0`.
 - Each article is sent with its full text (`content`) and its summary (`summarized`).
 
 ---
@@ -213,6 +217,24 @@ Swagger documentation is available at `http://localhost:3000/swagger`.
    - Link the article to its categories with `createMany({ skipDuplicates: true })`, so links that already exist are skipped.
    - Add a summary **only if it differs** from the latest one.
 5. `Promise.allSettled` means one failing article doesn't stop the others. Failures are logged.
+6. **Group same-story articles** from different sources (next section).
+
+### Same-story grouping ("Also covered by")
+Different sites often report the same event, e.g. "BP Highway reopens after five-day disruption" (Kathmandu Post) and "BP Highway reopens after four-day closure…" (Himalayan Times). These are different URLs, so the upsert keeps both; this step groups them so the feed shows the story **once** with "Also covered by …".
+
+Code: `backend/src/api/news-articles/story-similarity.ts` (algorithm, with unit tests in `story-similarity.spec.ts`) and `groupRecentStories()` in `news-articles.service.ts`.
+
+1. After every batch, load the articles published in the **last 3 days**, oldest first.
+2. **Detect the language** of each article from its script: mostly Devanagari → Nepali, otherwise English. Only articles in the **same language** are compared.
+3. Build **TF-IDF vectors** per language, twice: for the full text (title counted twice + content) and for the title alone. TF is sublinear (`1 + log count`), IDF is smoothed (`log((N+1)/(df+1)) + 1`), and vectors are L2-normalised, so the **cosine similarity** is their dot product.
+4. For each article that is not grouped yet, compare it with every **earlier** article from a **different source**. They are the same story when
+   - full-text similarity **≥ 0.20** and title similarity **≥ 0.28**, or
+   - full-text similarity **≥ 0.50** (near-identical articles).
+5. The article joins the story of its best match. `NewsArticle.storyId` points to the story's **lead** (its oldest article). Comparing only with earlier articles means the lead is always the oldest and groups can't form cycles.
+
+The thresholds were tuned on real scraped articles. Requiring **both** signals separates same-story pairs from same-topic pairs: "12 dead in Baglung floods" vs "Floods claim 27 lives across Nepal" scores 0.27 on full text but only 0.24 on titles, so they stay separate. Some Nepali sites put an invisible zero-width joiner inside conjuncts (झोलुङ्‍गे vs झोलुङ्गे), so joiners are removed before the text is split into words; otherwise the same word would not match.
+
+The API lists only leads (and ungrouped articles). Each article carries a `coverage` array with the same story from the other sources. If a lead is deleted, its grouped articles are listed on their own again.
 
 ### Database design (`prisma/schema.prisma`)
 - **NewsArticle ↔ Category** is **many-to-many** through the join table `ArticleCategory`, which has a composite primary key `(articleId, categoryId)`.
@@ -220,6 +242,7 @@ Swagger documentation is available at `http://localhost:3000/swagger`.
 - **Soft delete:** deleting an article sets `deletedAt` and `deletedBy` instead of removing the row. This keeps an audit trail. Soft-deleted articles are hidden from all public queries.
 - **LoginHistory** records the IP address, user agent, and login/logout times.
 - **UserPreference** and **UserInteraction** (like, share, comment) are modeled for future features.
+- **Same story:** `NewsArticle.storyId` is a self-relation to the story's lead article (see "Same-story grouping").
 - **Migrations** live in `prisma/migrations/`. Prisma generates SQL migrations and a type-safe client from the schema.
 
 ### Search: PostgreSQL full-text search
@@ -229,6 +252,7 @@ Swagger documentation is available at `http://localhost:3000/swagger`.
 - Results are ranked by **`ts_rank`** (title matches rank higher), then by date.
 - It uses the `simple` configuration (no language-specific stemming), so it works for both Nepali and English.
 - It matches **whole words**, so `cric` doesn't find "cricket".
+- **Language filter:** `?language=en` or `?language=ne` (on both the list and search). `NewsArticle.language` is set when an article is saved, from its script: more Devanagari than Latin letters means Nepali (the same `detectLanguage()` used by story grouping). The website has an All / English / नेपाली toggle above the feed.
 - **Pagination:** `skip = (page − 1) × limit`, `take = limit`. The defaults are page 1, limit 10, newest first. A separate count query returns the total so the frontend can show page numbers.
 
 ### Authentication and security
@@ -257,7 +281,9 @@ Swagger documentation is available at `http://localhost:3000/swagger`.
 | How do you handle a sentence with no similar sentences? | It's a dangling node: its column becomes 1/N, as in PageRank. |
 | Why 30%? | A common summary ratio: short enough to save time, long enough to keep the main points. |
 | Why RabbitMQ? | Decoupling, durability, and the option to add more consumers. |
-| How are duplicates prevented? | `url` is unique and articles are upserted on it. Category links use `skipDuplicates`. A summary is added only if it changed. |
+| How are duplicates prevented? | `url` is unique and articles are upserted on it. Category links use `skipDuplicates`. A summary is added only if it changed. The same story from different sources is grouped with TF-IDF + cosine similarity. |
+| Why not group English and Nepali articles? | TF-IDF compares words, and an English and a Nepali article share almost none. Cross-language grouping needs translation or a multilingual embedding model (future work). |
+| Why two similarity scores? | Articles on the same topic (e.g. two different flood reports) share many body words. Requiring similar titles too keeps same-topic but different stories apart. |
 | Why Prisma? | Type-safe queries, migrations, and protection from SQL injection. |
 | How does search work? | A generated `tsvector` column with a GIN index, `websearch_to_tsquery`, ranked with `ts_rank`. |
 | How is the API secured? | Global JWT guard, RBAC, bcrypt, verified refresh tokens, helmet headers, DTO validation, secrets in `.env`. |
@@ -274,4 +300,4 @@ Swagger documentation is available at `http://localhost:3000/swagger`.
 - **Unused data:** user preferences and interactions are in the schema but have no API yet.
 - **Tests:** some unit tests (news-articles, categories) are placeholders that don't provide their dependencies.
 
-Future work: transformer-based summarization, RSS or real-time updates, personalized feeds, and support for more languages (e.g. Maithili).
+Future work: **cross-language story grouping** (matching an English and a Nepali article about the same event, using translation or multilingual sentence embeddings), transformer-based summarization, RSS or real-time updates, personalized feeds, and support for more languages (e.g. Maithili).

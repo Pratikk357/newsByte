@@ -27,7 +27,8 @@ class KantipurSpider(scrapy.Spider):
 
     def parse(self, response):
         print(f"Processing: {response.url}")
-        links = response.css('div.nav-bar ul li a::attr(href)').getall()
+        # Category links from the main menu; the menu repeats some links, so de-duplicate
+        links = list(dict.fromkeys(response.css('div.menu-wrapper a::attr(href)').getall()))
         print(f"Extracted links: {links}")
 
         file_paths = [urlparse(link).path.lstrip('/') for link in links]
@@ -51,7 +52,7 @@ class KantipurSpider(scrapy.Spider):
     def parse_detail(self, response):
         print(f"Processing: {response.url}")
 
-        titles_link = response.css('article div.teaser.offset h2 a::attr(href)').getall()
+        titles_link = response.css('div.category-description h2 a::attr(href)').getall()
         print(f"Extracted titles: {titles_link}")
 
         file_path = response.meta['file_path']
@@ -59,8 +60,10 @@ class KantipurSpider(scrapy.Spider):
         
         for title_link in titles_link:
             full_url = response.urljoin(title_link)
-            article_published_date_str = re.findall(r'\d{4}/\d{2}/\d{2}', title_link)[0]
-            if(datetime.strptime(article_published_date_str, '%Y/%m/%d').date() != datetime.now().date()):
+            dates = re.findall(r'\d{4}/\d{2}/\d{2}', title_link)
+            if not dates:
+                continue
+            if(datetime.strptime(dates[0], '%Y/%m/%d').date() != datetime.now().date()):
                 continue
             
             yield scrapy.Request(url=full_url, callback=self.parse_title, meta={
@@ -73,12 +76,14 @@ class KantipurSpider(scrapy.Spider):
         print(f"Processing: {response.url}")
 
         file_path = response.meta['file_path']
-        title_text = response.css('h1::text').get(default="").strip()
+        # Article pages have no <h1>; the headline is in og:title (and an <h2>)
+        title_text = (response.css('meta[property="og:title"]::attr(content)').get()
+                      or response.css('section.news-section-wrap-story h2 ::text').get(default="")).strip()
         link = response.meta['link']
         title_link = response.meta['title_link']
 
-        # Extract the content from <p> tags
-        contents = response.css('div.row div.description p::text').getall()
+        # Extract the content from <p> tags, including text nested in <span>/<a>/etc.
+        contents = response.css('section.news-section-wrap-story .news-inner-wrapper p ::text').getall()
         content_text = ' '.join([c.strip() for c in contents if c.strip()])
         summary_text = summarizer.summarize_from_scratch(content_text, "nepali")
         image_url = response.css('meta[property="og:image"]::attr(content)').get()

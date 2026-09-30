@@ -3,19 +3,20 @@
 <!-- ![NewsByte Banner](https://project-banner) -->
 
 **NewsByte** is an automated Nepali news aggregation and summarization platform that streamlines information consumption from multiple online news portals.  
-It collects articles from **Ekantipur** and **The Kathmandu Post**, summarizes them using a **hybrid TF-IDF + TextRank** algorithm, and presents concise, contextually accurate summaries via an intuitive, responsive web interface.
+It collects articles from **Ekantipur**, **The Kathmandu Post**, **Onlinekhabar** and **The Himalayan Times**, summarizes them using a **hybrid TF-IDF + TextRank** algorithm, and presents concise, contextually accurate summaries via an intuitive, responsive web interface.
 
 ---
 
 ## 🚀 Features
 
-- **Automated Web Scraping** — **Scrapy** spiders collect the day's articles from Ekantipur and The Kathmandu Post.
+- **Automated Web Scraping** — **Scrapy** spiders collect the day's articles from Ekantipur and Onlinekhabar (Nepali) and The Kathmandu Post and The Himalayan Times (English).
 - **Hybrid NLP Summarization** — Summarizes articles to ~30% of their sentences using a **TF-IDF-weighted TextRank** algorithm (PageRank computed by power iteration).
 - **Asynchronous Processing** — **RabbitMQ** decouples the scraper from the backend; messages are durable and persistent.
 - **Scalable Backend** — **NestJS** (Fastify) APIs with **Prisma ORM** provide efficient, type-safe data access.
-- **Search & Filter Support** — Ranked full-text search with a GIN-indexed **PostgreSQL tsvector**, plus date filtering and pagination.
+- **Search & Filter Support** — Ranked full-text search with a GIN-indexed **PostgreSQL tsvector**, plus language (English / Nepali), date filtering and pagination.
 - **Responsive Frontend** — Built using **React 18** with TypeScript, optimized for both mobile and desktop.
 - **Bilingual Support** — Summarization pipeline handles **English** and **Nepali** news content.
+- **Same-story grouping** — When several sources report the same story, it is shown once with "Also covered by …", using **TF-IDF + cosine similarity** between articles in the same language.
 - **Secure** — bcrypt-hashed passwords, JWT access/refresh tokens, role-based access control, and a shared secret on queue messages.
 
 ---
@@ -24,7 +25,7 @@ It collects articles from **Ekantipur** and **The Kathmandu Post**, summarizes t
 
 ```
            ┌─────────────┐
-           │   Scrapy    │  <-- Web Crawling (Ekantipur, Kathmandu Post)
+           │   Scrapy    │  <-- Web Crawling (Ekantipur, Kathmandu Post, Onlinekhabar, Himalayan Times)
            └──────┬──────┘
                   │
            ┌──────▼──────┐
@@ -165,6 +166,8 @@ python -c "import nltk; [nltk.download(p) for p in ('punkt', 'punkt_tab', 'stopw
 
 scrapy crawl kantipur
 scrapy crawl kathmandu_post
+scrapy crawl onlinekhabar
+scrapy crawl himalayan_times
 ```
 Each spider summarizes today's articles and publishes them to RabbitMQ when it finishes; the consumer then stores them in PostgreSQL.
 
@@ -176,7 +179,7 @@ Each spider summarizes today's articles and publishes them to RabbitMQ when it f
 | 2 | REST API | `npm run start:dev` | `backend/` |
 | 3 | RabbitMQ consumer | `npm run start:consumer` | `backend/` |
 | 4 | Frontend | `npm run dev` | `frontend/` |
-| 5 | Scraper (whenever you want fresh news) | `scrapy crawl kantipur` / `scrapy crawl kathmandu_post` | `scrapper/news_scrapper/` |
+| 5 | Scraper (whenever you want fresh news) | `scrapy crawl kantipur` / `kathmandu_post` / `onlinekhabar` / `himalayan_times` | `scrapper/news_scrapper/` |
 
 For production builds use `npm run build`, then `npm run start:prod` and `npm run start:consumer:prod`.
 

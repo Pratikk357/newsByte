@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, ExternalLink, Share2, Clock, Bookmark } from "lucide-react";
+import { ArrowLeft, ExternalLink, Share2, Clock, Bookmark, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,6 +8,8 @@ import Header from "@/components/Header";
 import {  useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import axios from "axios";
+import { StoryCoverage, sourceName } from "@/lib/sources";
+import { categoryLabel } from "@/lib/categories";
 
 
 async function fetchArticleDetail({queryKey}) {
@@ -76,8 +78,10 @@ const dataDetail = () => {
           {/* data header */}
           <div className="space-y-4">
             <div className="flex items-center space-x-2">
-              <Badge variant="secondary">{data.responseObject.source}</Badge>
-              <Badge variant="outline" className="capitalize">{data.responseObject.tags[0].replaceAll("/","")}</Badge>
+              <Badge variant="secondary">{sourceName(data.responseObject.source)}</Badge>
+              {data.responseObject.tags[0] && (
+                <Badge variant="outline">{categoryLabel(data.responseObject.tags[0])}</Badge>
+              )}
             </div>
             
             <h1 className="text-3xl md:text-4xl font-bold leading-tight">
@@ -133,6 +137,31 @@ const dataDetail = () => {
             </CardContent>
           </Card>
 
+          {/* The same story from other sources */}
+          {data.responseObject.coverage?.length > 0 && (
+            <Card>
+              <CardContent className="p-6">
+                <h2 className="flex items-center text-lg font-semibold mb-4">
+                  <Layers className="w-5 h-5 mr-2 text-news-primary" />
+                  Also covered by
+                </h2>
+                <ul className="space-y-3">
+                  {data.responseObject.coverage.map((c: StoryCoverage) => (
+                    <li key={c.id}>
+                      <button
+                        onClick={() => navigate(`/article/${c.id}`)}
+                        className="w-full text-left p-3 rounded-md hover:bg-secondary/60 transition-colors"
+                      >
+                        <Badge variant="outline" className="mb-1">{sourceName(c.source)}</Badge>
+                        <p className="font-medium leading-snug">{c.title}</p>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Full content placeholder */}
           {/* <Card>
             <CardContent className="p-6">
@@ -159,7 +188,7 @@ const dataDetail = () => {
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-6 bg-secondary/50 rounded-lg">
             <div>
               <p className="text-sm text-muted-foreground mb-1">Original source:</p>
-              <p className="font-medium">{data.responseObject.source}</p>
+              <p className="font-medium">{sourceName(data.responseObject.source)}</p>
             </div>
             <Button 
               onClick={() => window.open(data.responseObject.sourceUrl, '_blank')}

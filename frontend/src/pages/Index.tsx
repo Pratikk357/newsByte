@@ -5,6 +5,8 @@ import ArticleCard from "@/components/ArticleCard";
 import CategoryTabs from "@/components/CategoryTabs";
 import { mockArticles } from "@/data/mockArticles";
 import { Badge } from "@/components/ui/badge";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { categoryLabel } from "@/lib/categories";
 import { TrendingUp, Clock, Globe } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
@@ -18,8 +20,31 @@ export const formatTime = (date: Date) => {
   });
 };
 
-export async function fetchArticles() {
-  const res = await axios.get('/news-articles?limit=100');
+// "all", or an article language the API filters on
+type LanguageFilter = "all" | "en" | "ne";
+const LANGUAGE_KEY = "newsLanguage";
+
+// The chosen language is remembered per browser; storage can be unavailable (private mode)
+const loadLanguage = (): LanguageFilter => {
+  try {
+    const saved = localStorage.getItem(LANGUAGE_KEY);
+    return saved === "en" || saved === "ne" ? saved : "all";
+  } catch {
+    return "all";
+  }
+};
+
+export async function fetchArticles({ queryKey }) {
+  // The admin page calls this with queryKey ['articles'] (no filters): all articles
+  const language: LanguageFilter = queryKey[1] ?? "all";
+  const category: string = queryKey[2] ?? "all";
+  const res = await axios.get('/news-articles', {
+    params: {
+      limit: 100,
+      ...(language !== "all" && { language }),
+      ...(category !== "all" && { category }),
+    },
+  });
   if (!res.data.success) throw new Error('Network error');
   return res.data;
 }
@@ -28,28 +53,38 @@ export async function fetchArticles() {
 const Index = () => {
   const [activeCategory, setActiveCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [language, setLanguage] = useState<LanguageFilter>(loadLanguage);
   const navigate = useNavigate();
+
+  const changeLanguage = (value: string) => {
+    if (!value) return; // clicking the selected option again would clear it
+    setLanguage(value as LanguageFilter);
+    try {
+      localStorage.setItem(LANGUAGE_KEY, value);
+    } catch {
+      // Not remembered, but the filter still works
+    }
+  };
 
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['articles'],
+    queryKey: ['articles', language, activeCategory],
     queryFn: fetchArticles,
   });
 
   const [filteredArticles, setFilteredArticles] = useState([]);
   useEffect(() => {
     if (data) {
-      setFilteredArticles(data.responseObject.data.filter(article => {
-        const matchesCategory = activeCategory.toLowerCase() === "all" || article.tags[0].toLowerCase() === activeCategory;
-        const matchesSearch = searchQuery === "" ||
-          article.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          article.summary.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          article.source.toLowerCase().includes(searchQuery.toLowerCase());
-        return matchesCategory && matchesSearch;
-      }));
+      // Language and category are filtered by the API; the search box filters here
+      setFilteredArticles(data.responseObject.data.filter(article =>
+        searchQuery === "" ||
+        article.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        article.summary.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        article.source.toLowerCase().includes(searchQuery.toLowerCase())
+      ));
     }
 
-  }, [data, activeCategory, searchQuery])
+  }, [data, searchQuery])
 
 
   const handleArticleClick = (articleId: string) => {
@@ -103,15 +138,24 @@ const Index = () => {
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-4">
             <h2 className="text-2xl font-bold">
-              {activeCategory === "all" ? "Latest News" : `${activeCategory.replace("/", "").charAt(0).toUpperCase() + activeCategory.replace("/", "").slice(1)} News`}
+              {activeCategory === "all" ? "Latest News" : `${categoryLabel(activeCategory)} News`}
             </h2>
             <Badge variant="secondary" className="text-sm">
               {filteredArticles.length} articles
             </Badge>
           </div>
-          <div className="text-sm text-muted-foreground">
-            {/* Updated 2 hours ago */}
-          </div>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            value={language}
+            onValueChange={changeLanguage}
+            aria-label="News language"
+          >
+            <ToggleGroupItem value="all">All</ToggleGroupItem>
+            <ToggleGroupItem value="en">English</ToggleGroupItem>
+            <ToggleGroupItem value="ne">नेपाली</ToggleGroupItem>
+          </ToggleGroup>
         </div>
 
         {/* Articles grid */}
@@ -120,6 +164,8 @@ const Index = () => {
             <ArticleCard
               key={article.id}
               {...article}
+              url={article.sourceUrl}
+              category={categoryLabel(article.tags[0])}
               onClick={() => handleArticleClick(article.id)}
             />
           ))}

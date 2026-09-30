@@ -5,18 +5,10 @@ import { Injectable, Logger } from "@nestjs/common";
 import { Category, NewsArticle } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import { NewsArticleGetQueryDTO } from "./dto/news-article-get.query.dto";
-import { NewsArticleWithIncludes } from "./types/news-article-complex.type";
-
-// Relations returned with every listed article
-const ARTICLE_LIST_INCLUDE = {
-  articleCategories: {
-    include: {
-      category: true,
-    },
-  },
-  summaries: { where: { deletedAt: null } },
-  source: true,
-} satisfies Prisma.NewsArticleInclude;
+import {
+  ARTICLE_INCLUDE,
+  NewsArticleWithIncludes,
+} from "./types/news-article-complex.type";
 
 @Injectable()
 export class NewsArticlesRepository {
@@ -57,15 +49,7 @@ export class NewsArticlesRepository {
       const prisma = await this.prisma.getClient(client);
       const newsArticle = await prisma.newsArticle.findFirst({
         where: { id, deletedAt: null },
-        include: {
-          articleCategories: {
-            include: {
-              category: true,
-            },
-          },
-          summaries: true,
-          source: true,
-        },
+        include: ARTICLE_INCLUDE,
       });
       return newsArticle;
     } catch (error) {
@@ -94,8 +78,19 @@ export class NewsArticlesRepository {
         return await this.fullTextSearch(query, skip, take, prisma);
       }
 
-      // Soft-deleted articles are never listed
-      const where: Prisma.NewsArticleWhereInput = { deletedAt: null };
+      // Soft-deleted articles are never listed. A story covered by several sources is
+      // listed once, as its lead; its other articles are shown as the lead's coverage
+      // (unless the lead was deleted, then they are listed on their own again).
+      const where: Prisma.NewsArticleWhereInput = {
+        deletedAt: null,
+        OR: [{ storyId: null }, { story: { deletedAt: { not: null } } }],
+      };
+      if (query.language) {
+        where.language = query.language;
+      }
+      if (query.category) {
+        where.articleCategories = { some: { category: { name: query.category } } };
+      }
       if (query.dateFrom || query.dateTo) {
         where.createdAt = {};
         if (query.dateFrom) {
@@ -110,7 +105,7 @@ export class NewsArticlesRepository {
         prisma.newsArticle.count({ where }),
         prisma.newsArticle.findMany({
           where,
-          include: ARTICLE_LIST_INCLUDE,
+          include: ARTICLE_INCLUDE,
           skip,
           take,
           orderBy: { createdAt: query.order },
@@ -147,6 +142,14 @@ export class NewsArticlesRepository {
     if (query.dateTo) {
       conditions.push(Prisma.sql`"createdAt" <= ${new Date(query.dateTo)}`);
     }
+    if (query.language) {
+      conditions.push(Prisma.sql`"language" = ${query.language}::"Language"`);
+    }
+    if (query.category) {
+      conditions.push(Prisma.sql`EXISTS (
+        SELECT 1 FROM "ArticleCategory" ac JOIN "Category" c ON c.id = ac."categoryId"
+        WHERE ac."articleId" = "NewsArticle".id AND c.name = ${query.category})`);
+    }
     const where = Prisma.join(conditions, " AND ");
     const order = Prisma.raw(query.order === "asc" ? "ASC" : "DESC");
 
@@ -162,7 +165,7 @@ export class NewsArticlesRepository {
     const ids = idRows.map((row) => row.id);
     const articles = await prisma.newsArticle.findMany({
       where: { id: { in: ids } },
-      include: ARTICLE_LIST_INCLUDE,
+      include: ARTICLE_INCLUDE,
     });
     // findMany does not keep the ranked order, so restore it
     const rank = new Map(ids.map((id, i) => [id, i]));
@@ -271,6 +274,51 @@ export class NewsArticlesRepository {
     } catch (error) {
       this.logger.error(`Error soft deleting news article: ${error}`);
       handlePrismaError(error, "Failed to soft delete news article.");
+    }
+  }
+
+  /**
+   * Articles published since the given date, oldest first, with what story
+   * grouping needs: text, source, current lead and whether others joined them.
+   */
+  async findForStoryGrouping(
+    since: Date,
+    client?: Prisma.TransactionClient,
+  ) {
+    try {
+      const prisma = await this.prisma.getClient(client);
+      return await prisma.newsArticle.findMany({
+        where: { deletedAt: null, publishedDate: { gte: since } },
+        select: {
+          id: true,
+          title: true,
+          content: true,
+          sourceId: true,
+          storyId: true,
+          _count: { select: { storyArticles: true } },
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      });
+    } catch (error) {
+      this.logger.error(`Error fetching articles for story grouping: ${error}`);
+      handlePrismaError(error, "Failed to fetch articles for story grouping.");
+    }
+  }
+
+  /**
+   * Save story grouping results
+   * @param leads article id -> id of the lead article of its story
+   */
+  async setStoryIds(leads: Map<string, string>): Promise<void> {
+    try {
+      await this.prisma.$transaction(
+        [...leads].map(([id, storyId]) =>
+          this.prisma.newsArticle.update({ where: { id }, data: { storyId } }),
+        ),
+      );
+    } catch (error) {
+      this.logger.error(`Error saving story grouping: ${error}`);
+      handlePrismaError(error, "Failed to save story grouping.");
     }
   }
 }
